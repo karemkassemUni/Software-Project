@@ -2,44 +2,46 @@
 #include <Python.h>
 #include "symnmf.h"
 
-static PyObject* create_py_matrix_from_c(matrix* c_matrix) {
-    PyObject* py_matrix;
+/* Helper function to convert C matrix to Python list */
+static PyObject* matrix_to_python(matrix* c_matrix) {
+    PyObject *python_matrix, *row, *value;
     int i, j;
     
     if (!c_matrix) {
-        PyErr_SetString(PyExc_RuntimeError, "An Error Has Occurred");
         return NULL;
     }
     
-    py_matrix = PyList_New(c_matrix->rows);
-    if (!py_matrix) {
+    python_matrix = PyList_New(c_matrix->rows);
+    if (!python_matrix) {
         return NULL;
     }
     
     for (i = 0; i < c_matrix->rows; i++) {
-        PyObject* row = PyList_New(c_matrix->cols);
+        row = PyList_New(c_matrix->cols);
         if (!row) {
-            Py_DECREF(py_matrix);
+            Py_DECREF(python_matrix);
             return NULL;
         }
         
         for (j = 0; j < c_matrix->cols; j++) {
-            PyObject* val = PyFloat_FromDouble(c_matrix->data[i * c_matrix->cols + j]);
-            if (!val) {
+            value = PyFloat_FromDouble(c_matrix->data[i * c_matrix->cols + j]);
+            if (!value) {
                 Py_DECREF(row);
-                Py_DECREF(py_matrix);
+                Py_DECREF(python_matrix);
                 return NULL;
             }
-            PyList_SET_ITEM(row, j, val);
+            PyList_SET_ITEM(row, j, value);
         }
-        PyList_SET_ITEM(py_matrix, i, row);
+        PyList_SET_ITEM(python_matrix, i, row);
     }
     
-    return py_matrix;
+    return python_matrix;
 }
 
-static double* convert_py_points_to_c(PyObject* points_list, int n, int d) {
+/* Helper function to convert Python points to C array */
+static double* points_to_c(PyObject* points_list, int n, int d) {
     double* c_points;
+    PyObject *row, *item;
     int i, j;
     
     c_points = (double*)calloc(n * d, sizeof(double));
@@ -48,9 +50,19 @@ static double* convert_py_points_to_c(PyObject* points_list, int n, int d) {
     }
     
     for (i = 0; i < n; i++) {
-        PyObject* row = PyList_GetItem(points_list, i);
+        row = PyList_GetItem(points_list, i);
+        if (!row) {
+            free(c_points);
+            return NULL;
+        }
+        
         for (j = 0; j < d; j++) {
-            PyObject* item = PyList_GetItem(row, j);
+            item = PyList_GetItem(row, j);
+            if (!item) {
+                free(c_points);
+                return NULL;
+            }
+            
             c_points[i * d + j] = PyFloat_AsDouble(item);
             if (PyErr_Occurred()) {
                 free(c_points);
@@ -62,8 +74,10 @@ static double* convert_py_points_to_c(PyObject* points_list, int n, int d) {
     return c_points;
 }
 
-static matrix* convert_py_matrix_to_c(PyObject* py_matrix, int rows, int cols) {
+/* Helper function to convert Python matrix to C matrix */
+static matrix* matrix_to_c(PyObject* python_matrix, int rows, int cols) {
     matrix* c_matrix;
+    PyObject *row, *item;
     int i, j;
     
     c_matrix = create_matrix(rows, cols);
@@ -72,9 +86,19 @@ static matrix* convert_py_matrix_to_c(PyObject* py_matrix, int rows, int cols) {
     }
     
     for (i = 0; i < rows; i++) {
-        PyObject* row = PyList_GetItem(py_matrix, i);
+        row = PyList_GetItem(python_matrix, i);
+        if (!row) {
+            free_matrix(c_matrix);
+            return NULL;
+        }
+        
         for (j = 0; j < cols; j++) {
-            PyObject* item = PyList_GetItem(row, j);
+            item = PyList_GetItem(row, j);
+            if (!item) {
+                free_matrix(c_matrix);
+                return NULL;
+            }
+            
             c_matrix->data[i * cols + j] = PyFloat_AsDouble(item);
             if (PyErr_Occurred()) {
                 free_matrix(c_matrix);
@@ -86,166 +110,182 @@ static matrix* convert_py_matrix_to_c(PyObject* py_matrix, int rows, int cols) {
     return c_matrix;
 }
 
-static PyObject* symnmf_sym(PyObject* self, PyObject* args) {
-    PyObject* points_list;
+/* Python interface for similarity matrix calculation */
+static PyObject* sym_calc(PyObject* self, PyObject* args) {
+    PyObject *points_list, *result;
     int n, d;
     double* points;
-    matrix* sim;
-    PyObject* result;
+    matrix* sim_matrix;
     
-if (!PyArg_ParseTuple(args, "Oii", &points_list, &n, &d)) {
-        PyErr_SetString(PyExc_RuntimeError, "An Error Has Occurred");
+    if (!PyArg_ParseTuple(args, "Oii", &points_list, &n, &d)) {
         return NULL;
     }
     
-    points = convert_py_points_to_c(points_list, n, d);
+    points = points_to_c(points_list, n, d);
     if (!points) {
         PyErr_SetString(PyExc_RuntimeError, "An Error Has Occurred");
         return NULL;
     }
     
-    sim = calculate_similarity_matrix(points, n, d);
+    sim_matrix = calculate_similarity_matrix(points, n, d);
     free(points);
-    if (!sim) {
+    
+    if (!sim_matrix) {
         PyErr_SetString(PyExc_RuntimeError, "An Error Has Occurred");
         return NULL;
     }
     
-    result = create_py_matrix_from_c(sim);
-    free_matrix(sim);
+    result = matrix_to_python(sim_matrix);
+    free_matrix(sim_matrix);
+    
+    if (!result) {
+        PyErr_SetString(PyExc_RuntimeError, "An Error Has Occurred");
+        return NULL;
+    }
     
     return result;
 }
 
-static PyObject* symnmf_ddg(PyObject* self, PyObject* args) {
-    PyObject* sim_list;
+/* Python interface for diagonal degree matrix calculation */
+static PyObject* ddg_calc(PyObject* self, PyObject* args) {
+    PyObject *sim_list, *result;
     int n;
-    matrix* sim;
-    matrix* ddg;
-    PyObject* result;
+    matrix *sim_matrix, *ddg_matrix;
     
     if (!PyArg_ParseTuple(args, "Oi", &sim_list, &n)) {
+        return NULL;
+    }
+    
+    sim_matrix = matrix_to_c(sim_list, n, n);
+    if (!sim_matrix) {
         PyErr_SetString(PyExc_RuntimeError, "An Error Has Occurred");
         return NULL;
     }
     
-    sim = convert_py_matrix_to_c(sim_list, n, n);
-    if (!sim) {
+    ddg_matrix = calculate_diagonal_degree_matrix(sim_matrix);
+    free_matrix(sim_matrix);
+    
+    if (!ddg_matrix) {
         PyErr_SetString(PyExc_RuntimeError, "An Error Has Occurred");
         return NULL;
     }
     
-    ddg = calculate_diagonal_degree_matrix(sim);
-    free_matrix(sim);
-    if (!ddg) {
+    result = matrix_to_python(ddg_matrix);
+    free_matrix(ddg_matrix);
+    
+    if (!result) {
         PyErr_SetString(PyExc_RuntimeError, "An Error Has Occurred");
         return NULL;
     }
-    
-    result = create_py_matrix_from_c(ddg);
-    free_matrix(ddg);
     
     return result;
 }
 
-static PyObject* symnmf_norm(PyObject* self, PyObject* args) {
-    PyObject* sim_list;
-    PyObject* ddg_list;
+/* Python interface for normalized similarity matrix calculation */
+static PyObject* norm_calc(PyObject* self, PyObject* args) {
+    PyObject *sim_list, *ddg_list, *result;
     int n;
-    matrix* sim;
-    matrix* ddg;
-    matrix* norm;
-    PyObject* result;
+    matrix *sim_matrix, *ddg_matrix, *norm_matrix;
     
     if (!PyArg_ParseTuple(args, "OOi", &sim_list, &ddg_list, &n)) {
+        return NULL;
+    }
+    
+    sim_matrix = matrix_to_c(sim_list, n, n);
+    if (!sim_matrix) {
         PyErr_SetString(PyExc_RuntimeError, "An Error Has Occurred");
         return NULL;
     }
     
-    sim = convert_py_matrix_to_c(sim_list, n, n);
-    if (!sim) {
+    ddg_matrix = matrix_to_c(ddg_list, n, n);
+    if (!ddg_matrix) {
+        free_matrix(sim_matrix);
         PyErr_SetString(PyExc_RuntimeError, "An Error Has Occurred");
         return NULL;
     }
     
-    ddg = convert_py_matrix_to_c(ddg_list, n, n);
-    if (!ddg) {
-        free_matrix(sim);
+    norm_matrix = calculate_normalized_similarity(sim_matrix, ddg_matrix);
+    free_matrix(sim_matrix);
+    free_matrix(ddg_matrix);
+    
+    if (!norm_matrix) {
         PyErr_SetString(PyExc_RuntimeError, "An Error Has Occurred");
         return NULL;
     }
     
-    norm = calculate_normalized_similarity(sim, ddg);
-    free_matrix(sim);
-    free_matrix(ddg);
-    if (!norm) {
+    result = matrix_to_python(norm_matrix);
+    free_matrix(norm_matrix);
+    
+    if (!result) {
         PyErr_SetString(PyExc_RuntimeError, "An Error Has Occurred");
         return NULL;
     }
-    
-    result = create_py_matrix_from_c(norm);
-    free_matrix(norm);
     
     return result;
 }
 
-static PyObject* symnmf_factorize(PyObject* self, PyObject* args) {
-    PyObject* w_list;
-    PyObject* h_init_list;
+/* Python interface for matrix factorization */
+static PyObject* factorize_calc(PyObject* self, PyObject* args) {
+    PyObject *w_list, *h_init_list, *result;
     int n, k;
-    matrix* w;
-    matrix* h_init;
-    matrix* h;
-    PyObject* result;
+    matrix *w_matrix, *h_init_matrix, *h_final_matrix;
     
     if (!PyArg_ParseTuple(args, "OOii", &w_list, &h_init_list, &n, &k)) {
+        return NULL;
+    }
+    
+    w_matrix = matrix_to_c(w_list, n, n);
+    if (!w_matrix) {
         PyErr_SetString(PyExc_RuntimeError, "An Error Has Occurred");
         return NULL;
     }
     
-    w = convert_py_matrix_to_c(w_list, n, n);
-    if (!w) {
+    h_init_matrix = matrix_to_c(h_init_list, n, k);
+    if (!h_init_matrix) {
+        free_matrix(w_matrix);
         PyErr_SetString(PyExc_RuntimeError, "An Error Has Occurred");
         return NULL;
     }
     
-    h_init = convert_py_matrix_to_c(h_init_list, n, k);
-    if (!h_init) {
-        free_matrix(w);
+    h_final_matrix = optimize_h(w_matrix, h_init_matrix, MAX_ITER, EPSILON);
+    free_matrix(w_matrix);
+    free_matrix(h_init_matrix);
+    
+    if (!h_final_matrix) {
         PyErr_SetString(PyExc_RuntimeError, "An Error Has Occurred");
         return NULL;
     }
     
-    h = optimize_h(w, h_init, MAX_ITER, EPSILON);
-    free_matrix(w);
-    free_matrix(h_init);
-    if (!h) {
+    result = matrix_to_python(h_final_matrix);
+    free_matrix(h_final_matrix);
+    
+    if (!result) {
         PyErr_SetString(PyExc_RuntimeError, "An Error Has Occurred");
         return NULL;
     }
-    
-    result = create_py_matrix_from_c(h);
-    free_matrix(h);
     
     return result;
 }
 
-static PyMethodDef SymnmfMethods[] = {
-    {"sym", symnmf_sym, METH_VARARGS, "Calculate similarity matrix"},
-    {"ddg", symnmf_ddg, METH_VARARGS, "Calculate diagonal degree matrix"},
-    {"norm", symnmf_norm, METH_VARARGS, "Calculate normalized similarity matrix"},
-    {"factorize", symnmf_factorize, METH_VARARGS, "Perform matrix factorization"},
+/* Method definitions */
+static PyMethodDef symnmf_methods[] = {
+    {"sym", sym_calc, METH_VARARGS, "Calculate similarity matrix"},
+    {"ddg", ddg_calc, METH_VARARGS, "Calculate diagonal degree matrix"},
+    {"norm", norm_calc, METH_VARARGS, "Calculate normalized similarity matrix"},
+    {"factorize", factorize_calc, METH_VARARGS, "Perform matrix factorization"},
     {NULL, NULL, 0, NULL}
 };
 
+/* Module definition */
 static struct PyModuleDef symnmfmodule = {
     PyModuleDef_HEAD_INIT,
     "symnmf",
     NULL,
     -1,
-    SymnmfMethods
+    symnmf_methods
 };
 
+/* Module initialization function */
 PyMODINIT_FUNC PyInit_symnmf(void) {
     return PyModule_Create(&symnmfmodule);
 }
