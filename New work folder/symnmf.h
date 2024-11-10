@@ -5,6 +5,8 @@
 #define MAX_ITER 300
 #define EPSILON 0.0001
 #define BETA 0.5
+#define MAX_LINE_LENGTH 1024
+#define MAX_VAL 1.79769e+308    /* Replacement for INFINITY */
 
 /* Structure to hold matrix data */
 typedef struct {
@@ -13,7 +15,7 @@ typedef struct {
     double* data;
 } matrix;
 
-/* Function declarations */
+/* Function declarations - Public Interface */
 matrix* create_matrix(int rows, int cols);
 void free_matrix(matrix* mat);
 matrix* calculate_similarity(const double* points, int n, int d);
@@ -23,5 +25,6 @@ matrix* optimize_h(const matrix* w, const matrix* h_init, int n, int k);
 double squared_euclidean_distance(const double* p1, const double* p2, int dim);
 void matrix_multiply(const matrix* mat1, const matrix* mat2, matrix* result, int transpose2);
 double frobenius_norm(const matrix* mat1, const matrix* mat2);
+void print_matrix(const matrix* mat); 
 
 #endif /* SYMNMF_H_ */

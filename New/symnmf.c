@@ -5,13 +5,9 @@
 #include <math.h>
 #include "symnmf.h"
 
-/* Constants */
-#define MAX_LINE_LENGTH 1024
-
 /* Forward declarations of static functions */
-static void copy_matrix_data(const matrix* src, matrix* dst);
 static double* read_data_points(const char* filename, int* n_points, int* n_dim);
-static void print_matrix(const matrix* mat);
+static void copy_matrix_data(const matrix* src, matrix* dst);
 
 /* Helper function to safely copy matrix data */
 static void copy_matrix_data(const matrix* src, matrix* dst) {
@@ -101,7 +97,7 @@ double frobenius_norm(const matrix* mat1, const matrix* mat2) {
     if (!mat1 || !mat2 || 
         mat1->rows != mat2->rows || 
         mat1->cols != mat2->cols) {
-        return INFINITY;
+        return MAX_VAL;  /* Using our defined constant instead of INFINITY */
     }
     
     size = mat1->rows * mat1->cols;
@@ -178,7 +174,7 @@ matrix* calculate_normalized(const matrix* sim, const matrix* deg) {
 matrix* optimize_h(const matrix* w, const matrix* h_init, int n, int k) {
     matrix *h_curr = NULL, *h_next = NULL, *result = NULL;
     matrix *wh = NULL, *hht = NULL, *hhth = NULL;
-    double diff = INFINITY;
+    double diff = MAX_VAL;  /* Using our defined constant instead of INFINITY */
     int iter;
     int i, j;
     
@@ -244,7 +240,22 @@ cleanup:
     return result;
 }
 
-/* File reading and helper functions */
+/* Print matrix implementation moved from static to public */
+void print_matrix(const matrix* mat) {
+    int i, j;
+    
+    for (i = 0; i < mat->rows; i++) {
+        for (j = 0; j < mat->cols; j++) {
+            printf("%.4f", mat->data[i * mat->cols + j]);
+            if (j < mat->cols - 1) {
+                printf(",");
+            }
+        }
+        printf("\n");
+    }
+}
+
+/* File reading helper function */
 static double* read_data_points(const char* filename, int* n_points, int* n_dim) {
     FILE* fp;
     char line[MAX_LINE_LENGTH];
@@ -303,20 +314,6 @@ static double* read_data_points(const char* filename, int* n_points, int* n_dim)
     
     fclose(fp);
     return points;
-}
-
-static void print_matrix(const matrix* mat) {
-    int i, j;
-    
-    for (i = 0; i < mat->rows; i++) {
-        for (j = 0; j < mat->cols; j++) {
-            printf("%.4f", mat->data[i * mat->cols + j]);
-            if (j < mat->cols - 1) {
-                printf(",");
-            }
-        }
-        printf("\n");
-    }
 }
 
 /* Main function */
