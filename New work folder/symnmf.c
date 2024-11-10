@@ -78,11 +78,6 @@ void matrix_multiply(const matrix* mat1, const matrix* mat2, matrix* result, int
                 val1 = mat1->data[i * p + k];
                 val2 = transpose2 ? mat2->data[j * mat2->cols + k] : mat2->data[k * mat2->cols + j];
                 
-                /* Skip multiplication if either value is very small */
-                if (fabs(val1) < EPS || fabs(val2) < EPS) {
-                    continue;
-                }
-                
                 sum += val1 * val2;
             }
             result->data[i * n + j] = sum;
@@ -105,7 +100,7 @@ double frobenius_norm(const matrix* mat1, const matrix* mat2) {
         sum += diff * diff;
     }
     
-    return sqrt(sum);
+    return sum;
 }
 
 /* Core algorithm functions */
@@ -129,13 +124,11 @@ matrix* calculate_similarity(const double* points, int n, int d) {
 
 matrix* calculate_degree(const matrix* sim) {
     matrix* deg = create_matrix(sim->rows, sim->rows);
-    int i, j;
-    
     if (!deg) return NULL;
     
-    for (i = 0; i < sim->rows; i++) {
+    for (int i = 0; i < sim->rows; i++) {
         double sum = 0.0;
-        for (j = 0; j < sim->cols; j++) {
+        for (int j = 0; j < sim->cols; j++) {
             sum += sim->data[i * sim->cols + j];
         }
         deg->data[i * deg->cols + i] = sum;
@@ -146,16 +139,16 @@ matrix* calculate_degree(const matrix* sim) {
 
 matrix* calculate_normalized(const matrix* sim, const matrix* deg) {
     matrix* norm = create_matrix(sim->rows, sim->cols);
-    int i, j;
-    
     if (!norm) return NULL;
     
-    for (i = 0; i < sim->rows; i++) {
-        for (j = 0; j < sim->cols; j++) {
-            double d_ii = sqrt(deg->data[i * deg->cols + i]);
-            double d_jj = sqrt(deg->data[j * deg->cols + j]);
+    for (int i = 0; i < sim->rows; i++) {
+        for (int j = 0; j < sim->cols; j++) {
+            double d_ii = deg->data[i * deg->cols + i];
+            double d_jj = deg->data[j * deg->cols + j];
             
-            if (d_ii > EPS && d_jj > EPS) {
+            if (d_ii > 0.0 && d_jj > 0.0) {
+                d_ii = sqrt(d_ii);
+                d_jj = sqrt(d_jj);
                 norm->data[i * norm->cols + j] = sim->data[i * sim->cols + j] / (d_ii * d_jj);
             }
         }
@@ -165,77 +158,78 @@ matrix* calculate_normalized(const matrix* sim, const matrix* deg) {
 }
 
 matrix* optimize_h(const matrix* w, const matrix* h_init, int n, int k) {
-    matrix* h_curr = NULL;
-    matrix* h_prev = NULL;
-    matrix* wh = NULL;
-    matrix* hth = NULL;
-    matrix* h_hth = NULL;
-    matrix* result = NULL;
-    double diff;
+    matrix *h_curr = NULL, *h_next = NULL, *result = NULL;
+    matrix *wh = NULL, *hht = NULL, *hhth = NULL;
+    double diff = INFINITY;
     int iter;
     
-    /* Validate input */
-    if (!w || !h_init || n <= 0 || k <= 0 || 
-        w->rows != n || w->cols != n || 
-        h_init->rows != n || h_init->cols != k) {
-        return NULL;
-    }
-    
-    /* Create all needed matrices */
+    // Allocate matrices
     h_curr = create_matrix(n, k);
-    h_prev = create_matrix(n, k);
+    h_next = create_matrix(n, k);
     wh = create_matrix(n, k);
-    hth = create_matrix(n, n);
-    h_hth = create_matrix(n, k);
+    hht = create_matrix(n, n);
+    hhth = create_matrix(n, k);
     
-    if (!h_curr || !h_prev || !wh || !hth || !h_hth) {
+    if (!h_curr || !h_next || !wh || !hht || !hhth) {
+        printf("An Error Has Occurred\n"); // delete this later
         goto cleanup;
     }
     
-    /* Initialize h_curr with h_init */
+    // Initialize
     copy_matrix_data(h_init, h_curr);
     
-    /* Main optimization loop */
-    for (iter = 0; iter < MAX_ITER; iter++) {
-        /* Store current H */
-        copy_matrix_data(h_curr, h_prev);
-        
-        /* Calculate WH */
+
+    // Main iteration loop
+    for (iter = 0; iter < MAX_ITER && diff >= EPSILON; iter++) {
+        // Zero out h_next
+        memset(h_next->data, 0, n * k * sizeof(double));
+
+        // Calculate WH
         matrix_multiply(w, h_curr, wh, 0);
         
-        /* Calculate H H^T */
-        matrix_multiply(h_curr, h_curr, hth, 1);
+        // Calculate HH^T
+        matrix_multiply(h_curr, h_curr, hht, 1);
         
-        /* Calculate (H^T H)H  [{nxn}{nxk}+>{nxk}]*/
-        matrix_multiply(hth, h_curr, h_hth, 0);
+        // Calculate (HH^T)H
+        matrix_multiply(hht, h_curr, hhth, 0);
         
-        /* Update H */
+        // Update rule
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < k; j++) {
-                double current_value = h_curr->data[i * k + j];
-                double wh_value = wh->data[i * k + j];
-                double h_hth_value = h_hth->data[i * k + j];
+                double wh_ij = wh->data[i * k + j];
+                double hhth_ij = hhth->data[i * k + j];
+                double h_ij = h_curr->data[i * k + j];
                 
-                if (h_hth_value > EPS) {
-                    double update = (1.0 - BETA) + BETA * (wh_value / h_hth_value);
-                    h_curr->data[i * k + j] = current_value * update;
-                }
+                // if (h_ij < 1e-10) {
+                //     h_next->data[i * k + j] = 0.0;
+                //     continue;
+                // }
                 
-                /* Ensure value stays positive */
-                if (h_curr->data[i * k + j] < EPS) {
-                    h_curr->data[i * k + j] = EPS;
-                }
+                double update;
+                update = (1.0 - BETA) + BETA * (wh_ij / hhth_ij);
+                // if (hhth_ij > 1e-10) {
+                //     update = (1.0 - BETA) + BETA * (wh_ij / hhth_ij);
+                // } else {
+                //     update = 1.0 - BETA;
+                // }
+                
+                h_next->data[i * k + j] = h_ij * update;
+                
+                // Handle very small values
+                // if (h_next->data[i * k + j] < 1e-10) {
+                //     h_next->data[i * k + j] = 0.0;
+                // }
             }
         }
+
+        // Calculate difference
+        diff = frobenius_norm(h_next, h_curr);
         
-        /* Check convergence */
-        diff = frobenius_norm(h_curr, h_prev);
-        if (diff < EPSILON) {
-            break;
-        }
+        // Copy h_next to h_curr
+        copy_matrix_data(h_next, h_curr);
     }
     
-    /* Prepare result */
+    // Create result
     result = create_matrix(n, k);
     if (result) {
         copy_matrix_data(h_curr, result);
@@ -243,13 +237,14 @@ matrix* optimize_h(const matrix* w, const matrix* h_init, int n, int k) {
     
 cleanup:
     free_matrix(h_curr);
-    free_matrix(h_prev);
+    free_matrix(h_next);
     free_matrix(wh);
-    free_matrix(hth);
-    free_matrix(h_hth);
+    free_matrix(hht);
+    free_matrix(hhth);
     
     return result;
 }
+
 
 /* File reading and main function */
 static double* read_data_points(const char* filename, int* n_points, int* n_dim) {
