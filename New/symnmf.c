@@ -83,7 +83,7 @@ void matrix_multiply(matrix* result, matrix* mat1, matrix* mat2, int transpose2)
                 }
                 
                 // Skip multiplication if either value is very small
-                if (fabs(val1) < 1e-10 || fabs(val2) < 1e-10) {
+                if (fabs(val1) < EPS || fabs(val2) < EPS) {
                     continue;
                 }
                 
@@ -173,7 +173,6 @@ matrix* calculate_normalized_similarity(matrix* sim_matrix, matrix* degree_matri
     return norm;
 }
 
-/* Matrix factorization optimization */
 /* Matrix factorization optimization */
 matrix* optimize_h(matrix* w, matrix* h_init, int max_iter, double epsilon) {
     int n = h_init->rows;
