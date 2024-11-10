@@ -23,6 +23,5 @@ matrix* optimize_h(const matrix* w, const matrix* h_init, int n, int k);
 double squared_euclidean_distance(const double* p1, const double* p2, int dim);
 void matrix_multiply(const matrix* mat1, const matrix* mat2, matrix* result, int transpose2);
 double frobenius_norm(const matrix* mat1, const matrix* mat2);
-static void print_matrix(const matrix* mat);
 
 #endif /* SYMNMF_H_ */

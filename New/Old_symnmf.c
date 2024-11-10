@@ -1,23 +1,15 @@
-/* Standard library includes */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include "symnmf.h"
 
-/* Constants */
 #define MAX_LINE_LENGTH 1024
-
-/* Forward declarations of static functions */
-static void copy_matrix_data(const matrix* src, matrix* dst);
-static double* read_data_points(const char* filename, int* n_points, int* n_dim);
-static void print_matrix(const matrix* mat);
 
 /* Helper function to safely copy matrix data */
 static void copy_matrix_data(const matrix* src, matrix* dst) {
-    int i;
     int size = src->rows * src->cols;
-    for (i = 0; i < size; i++) {
+    for (int i = 0; i < size; i++) {
         dst->data[i] = src->data[i];
     }
 }
@@ -29,7 +21,7 @@ matrix* create_matrix(int rows, int cols) {
     
     mat->rows = rows;
     mat->cols = cols;
-    mat->data = (double*)calloc((size_t)(rows * cols), sizeof(double));
+    mat->data = (double*)calloc(rows * cols, sizeof(double));
     
     if (!mat->data) {
         free(mat);
@@ -59,18 +51,17 @@ double squared_euclidean_distance(const double* p1, const double* p2, int dim) {
 
 void matrix_multiply(const matrix* mat1, const matrix* mat2, matrix* result, int transpose2) {
     int i, j, k;
-    int m, p, n;
-    double sum;
+    double sum, val1, val2;
     
     /* Validate input */
     if (!mat1 || !mat2 || !result) return;
     
-    m = mat1->rows;
-    p = mat1->cols;
-    n = transpose2 ? mat2->rows : mat2->cols;
-    
+    int m = mat1->rows;
+    int p = mat1->cols;
+    int n = transpose2 ? mat2->rows : mat2->cols;
     /* Validate dimensions */
     if (p != (transpose2 ? mat2->cols : mat2->rows) || result->rows != m || result->cols != n) {
+        printf("Invalid dimensions\n");
         return;
     }
     
@@ -84,8 +75,9 @@ void matrix_multiply(const matrix* mat1, const matrix* mat2, matrix* result, int
         for (j = 0; j < n; j++) {
             sum = 0.0;
             for (k = 0; k < p; k++) {
-                double val1 = mat1->data[i * p + k];
-                double val2 = transpose2 ? mat2->data[j * mat2->cols + k] : mat2->data[k * mat2->cols + j];
+                val1 = mat1->data[i * p + k];
+                val2 = transpose2 ? mat2->data[j * mat2->cols + k] : mat2->data[k * mat2->cols + j];
+                
                 sum += val1 * val2;
             }
             result->data[i * n + j] = sum;
@@ -94,19 +86,16 @@ void matrix_multiply(const matrix* mat1, const matrix* mat2, matrix* result, int
 }
 
 double frobenius_norm(const matrix* mat1, const matrix* mat2) {
-    int i;
-    double sum = 0.0;
-    int size;
-    
     if (!mat1 || !mat2 || 
         mat1->rows != mat2->rows || 
         mat1->cols != mat2->cols) {
         return INFINITY;
     }
     
-    size = mat1->rows * mat1->cols;
+    double sum = 0.0;
+    int size = mat1->rows * mat1->cols;
     
-    for (i = 0; i < size; i++) {
+    for (int i = 0; i < size; i++) {
         double diff = mat1->data[i] - mat2->data[i];
         sum += diff * diff;
     }
@@ -116,10 +105,9 @@ double frobenius_norm(const matrix* mat1, const matrix* mat2) {
 
 /* Core algorithm functions */
 matrix* calculate_similarity(const double* points, int n, int d) {
-    matrix* sim;
+    matrix* sim = create_matrix(n, n);
     int i, j;
     
-    sim = create_matrix(n, n);
     if (!sim) return NULL;
     
     for (i = 0; i < n; i++) {
@@ -135,15 +123,12 @@ matrix* calculate_similarity(const double* points, int n, int d) {
 }
 
 matrix* calculate_degree(const matrix* sim) {
-    matrix* deg;
-    int i, j;
-    
-    deg = create_matrix(sim->rows, sim->rows);
+    matrix* deg = create_matrix(sim->rows, sim->rows);
     if (!deg) return NULL;
     
-    for (i = 0; i < sim->rows; i++) {
+    for (int i = 0; i < sim->rows; i++) {
         double sum = 0.0;
-        for (j = 0; j < sim->cols; j++) {
+        for (int j = 0; j < sim->cols; j++) {
             sum += sim->data[i * sim->cols + j];
         }
         deg->data[i * deg->cols + i] = sum;
@@ -153,14 +138,11 @@ matrix* calculate_degree(const matrix* sim) {
 }
 
 matrix* calculate_normalized(const matrix* sim, const matrix* deg) {
-    matrix* norm;
-    int i, j;
-    
-    norm = create_matrix(sim->rows, sim->cols);
+    matrix* norm = create_matrix(sim->rows, sim->cols);
     if (!norm) return NULL;
     
-    for (i = 0; i < sim->rows; i++) {
-        for (j = 0; j < sim->cols; j++) {
+    for (int i = 0; i < sim->rows; i++) {
+        for (int j = 0; j < sim->cols; j++) {
             double d_ii = deg->data[i * deg->cols + i];
             double d_jj = deg->data[j * deg->cols + j];
             
@@ -180,9 +162,8 @@ matrix* optimize_h(const matrix* w, const matrix* h_init, int n, int k) {
     matrix *wh = NULL, *hht = NULL, *hhth = NULL;
     double diff = INFINITY;
     int iter;
-    int i, j;
     
-    /* Allocate matrices */
+    // Allocate matrices
     h_curr = create_matrix(n, k);
     h_next = create_matrix(n, k);
     wh = create_matrix(n, k);
@@ -190,45 +171,65 @@ matrix* optimize_h(const matrix* w, const matrix* h_init, int n, int k) {
     hhth = create_matrix(n, k);
     
     if (!h_curr || !h_next || !wh || !hht || !hhth) {
+        printf("An Error Has Occurred\n"); // delete this later
         goto cleanup;
     }
     
-    /* Initialize */
+    // Initialize
     copy_matrix_data(h_init, h_curr);
     
-    /* Main iteration loop */
-    for (iter = 0; iter < MAX_ITER && diff >= EPSILON; iter++) {
-        /* Zero out h_next */
-        memset(h_next->data, 0, (size_t)(n * k) * sizeof(double));
 
-        /* Calculate WH */
+    // Main iteration loop
+    for (iter = 0; iter < MAX_ITER && diff >= EPSILON; iter++) {
+        // Zero out h_next
+        memset(h_next->data, 0, n * k * sizeof(double));
+
+        // Calculate WH
         matrix_multiply(w, h_curr, wh, 0);
         
-        /* Calculate HH^T */
+        // Calculate HH^T
         matrix_multiply(h_curr, h_curr, hht, 1);
         
-        /* Calculate (HH^T)H */
+        // Calculate (HH^T)H
         matrix_multiply(hht, h_curr, hhth, 0);
         
-        /* Update rule */
-        for (i = 0; i < n; i++) {
-            for (j = 0; j < k; j++) {
+        // Update rule
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < k; j++) {
                 double wh_ij = wh->data[i * k + j];
                 double hhth_ij = hhth->data[i * k + j];
                 double h_ij = h_curr->data[i * k + j];
-                double update = (1.0 - BETA) + BETA * (wh_ij / hhth_ij);
+                
+                // if (h_ij < 1e-10) {
+                //     h_next->data[i * k + j] = 0.0;
+                //     continue;
+                // }
+                
+                double update;
+                update = (1.0 - BETA) + BETA * (wh_ij / hhth_ij);
+                // if (hhth_ij > 1e-10) {
+                //     update = (1.0 - BETA) + BETA * (wh_ij / hhth_ij);
+                // } else {
+                //     update = 1.0 - BETA;
+                // }
+                
                 h_next->data[i * k + j] = h_ij * update;
+                
+                // Handle very small values
+                // if (h_next->data[i * k + j] < 1e-10) {
+                //     h_next->data[i * k + j] = 0.0;
+                // }
             }
         }
 
-        /* Calculate difference */
+        // Calculate difference
         diff = frobenius_norm(h_next, h_curr);
         
-        /* Copy h_next to h_curr */
+        // Copy h_next to h_curr
         copy_matrix_data(h_next, h_curr);
     }
     
-    /* Create result */
+    // Create result
     result = create_matrix(n, k);
     if (result) {
         copy_matrix_data(h_curr, result);
@@ -244,7 +245,8 @@ cleanup:
     return result;
 }
 
-/* File reading and helper functions */
+
+/* File reading and main function */
 static double* read_data_points(const char* filename, int* n_points, int* n_dim) {
     FILE* fp;
     char line[MAX_LINE_LENGTH];
@@ -276,7 +278,7 @@ static double* read_data_points(const char* filename, int* n_points, int* n_dim)
         (*n_points)++;
     }
     
-    points = (double*)malloc((size_t)(*n_points * *n_dim) * sizeof(double));
+    points = (double*)malloc((*n_points) * (*n_dim) * sizeof(double));
     if (!points) {
         fclose(fp);
         printf("An Error Has Occurred\n");
@@ -319,21 +321,17 @@ static void print_matrix(const matrix* mat) {
     }
 }
 
-/* Main function */
 int main(int argc, char* argv[]) {
-    const char* goal;
-    const char* filename;
-    int n, d;
-    double* points;
-    matrix *sim = NULL, *deg = NULL, *norm = NULL;
-    
     if (argc != 3) {
         printf("An Error Has Occurred\n");
         return 1;
     }
     
-    goal = argv[1];
-    filename = argv[2];
+    const char* goal = argv[1];
+    const char* filename = argv[2];
+    int n, d;
+    double* points;
+    matrix *sim = NULL, *deg = NULL, *norm = NULL;
     
     points = read_data_points(filename, &n, &d);
     if (!points) {
