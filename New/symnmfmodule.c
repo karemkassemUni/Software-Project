@@ -44,6 +44,10 @@ static double* points_to_c(PyObject* points_list, int n, int d) {
     PyObject *row, *item;
     int i, j;
     
+    if (!PyList_Check(points_list)) {
+        return NULL;
+    }
+    
     c_points = (double*)calloc(n * d, sizeof(double));
     if (!c_points) {
         return NULL;
@@ -51,7 +55,7 @@ static double* points_to_c(PyObject* points_list, int n, int d) {
     
     for (i = 0; i < n; i++) {
         row = PyList_GetItem(points_list, i);
-        if (!row) {
+        if (!row || !PyList_Check(row)) {
             free(c_points);
             return NULL;
         }
@@ -80,6 +84,10 @@ static matrix* matrix_to_c(PyObject* python_matrix, int rows, int cols) {
     PyObject *row, *item;
     int i, j;
     
+    if (!PyList_Check(python_matrix)) {
+        return NULL;
+    }
+    
     c_matrix = create_matrix(rows, cols);
     if (!c_matrix) {
         return NULL;
@@ -87,7 +95,7 @@ static matrix* matrix_to_c(PyObject* python_matrix, int rows, int cols) {
     
     for (i = 0; i < rows; i++) {
         row = PyList_GetItem(python_matrix, i);
-        if (!row) {
+        if (!row || !PyList_Check(row)) {
             free_matrix(c_matrix);
             return NULL;
         }
@@ -127,7 +135,7 @@ static PyObject* sym_calc(PyObject* self, PyObject* args) {
         return NULL;
     }
     
-    sim_matrix = calculate_similarity_matrix(points, n, d);
+    sim_matrix = calculate_similarity(points, n, d);
     free(points);
     
     if (!sim_matrix) {
@@ -162,7 +170,7 @@ static PyObject* ddg_calc(PyObject* self, PyObject* args) {
         return NULL;
     }
     
-    ddg_matrix = calculate_diagonal_degree_matrix(sim_matrix);
+    ddg_matrix = calculate_degree(sim_matrix);
     free_matrix(sim_matrix);
     
     if (!ddg_matrix) {
@@ -204,7 +212,7 @@ static PyObject* norm_calc(PyObject* self, PyObject* args) {
         return NULL;
     }
     
-    norm_matrix = calculate_normalized_similarity(sim_matrix, ddg_matrix);
+    norm_matrix = calculate_normalized(sim_matrix, ddg_matrix);
     free_matrix(sim_matrix);
     free_matrix(ddg_matrix);
     
@@ -247,7 +255,7 @@ static PyObject* factorize_calc(PyObject* self, PyObject* args) {
         return NULL;
     }
     
-    h_final_matrix = optimize_h(w_matrix, h_init_matrix, MAX_ITER, EPSILON);
+    h_final_matrix = optimize_h(w_matrix, h_init_matrix, n, k);
     free_matrix(w_matrix);
     free_matrix(h_init_matrix);
     

@@ -1,12 +1,11 @@
 import sys
-import logging
 import numpy as np
 np.random.seed(1234)
 
 try:
     import symnmf
 except ImportError:
-    print("Error: Could not import symnmf module.", file=sys.stderr)
+    print("An Error Has Occurred")
     sys.exit(1)
 
 def read_data(filename):
@@ -14,14 +13,11 @@ def read_data(filename):
         points = []
         with open(filename, 'r') as f:
             for line in f:
-                line = line.strip()
-                if line:
-                    row = [float(x) for x in line.split(',')]
-                    points.append(row)
+                points.append([float(x) for x in line.strip().split(',')])
         return points
-    except Exception as e:
-        print(f"Error reading file: {str(e)}", file=sys.stderr)
-        raise
+    except:
+        print("An Error Has Occurred")
+        sys.exit(1)
 
 def print_matrix(matrix, header=None):
     if header:
@@ -29,13 +25,39 @@ def print_matrix(matrix, header=None):
     for row in matrix:
         print(','.join(f'{x:.4f}' for x in row))
 
-def validate_input(points):
-    if not points or not points[0]:
-        return False
-    length = len(points[0])
-    return all(len(row) == length for row in points)
+def calculate_symnmf(points, n, d, k):
+    # Calculate similarity matrix
+    sim = symnmf.sym(points, n, d)
+    if sim is None:
+        raise RuntimeError()
+    
+    # Calculate degree matrix
+    ddg = symnmf.ddg(sim, n)
+    if ddg is None:
+        raise RuntimeError()
+    
+    # Calculate normalized similarity
+    w = symnmf.norm(sim, ddg, n)
+    if w is None:
+        raise RuntimeError()
+    
+    # Initialize H
+    m = np.mean([np.mean(row) for row in w])
+    h_init = [[np.random.uniform(0, 2 * np.sqrt(m/k)) for _ in range(k)] for _ in range(n)]
+
+    # Print H_init
+    print_matrix(h_init, "H_init:")
+    
+    # Perform factorization
+    h_final = symnmf.factorize(w, h_init, n, k)
+    if h_final is None:
+        raise RuntimeError()
+    
+    print_matrix(h_final, "\nH_final:")
+    return h_final
 
 def main():
+    # Validate command line arguments
     if len(sys.argv) != 4:
         print("An Error Has Occurred")
         sys.exit(1)
@@ -45,75 +67,36 @@ def main():
         goal = sys.argv[2]
         filename = sys.argv[3]
         
+        # Read input data
         points = read_data(filename)
-        if not validate_input(points):
-            print("An Error Has Occurred")
-            sys.exit(1)
-            
+        if not points:
+            raise RuntimeError()
+        
         n = len(points)
         d = len(points[0])
         
+        if not all(len(row) == d for row in points):
+            raise RuntimeError()
+            
+        # Process based on goal
         if goal == 'symnmf':
-            # Calculate similarity matrix
-            sim = symnmf.sym(points, n, d)
-            if sim is None:
-                print("An Error Has Occurred")
-                sys.exit(1)
-            
-            # Calculate degree matrix
-            ddg = symnmf.ddg(sim, n)
-            if ddg is None:
-                print("An Error Has Occurred")
-                sys.exit(1)
-            
-            # Calculate normalized similarity
-            w = symnmf.norm(sim, ddg, n)
-            if w is None:
-                print("An Error Has Occurred")
-                sys.exit(1)
-            
-            # Initialize H
-            m = np.mean([np.mean(row) for row in w])
-            h_init = [[np.random.uniform(0, 2 * np.sqrt(m/k)) for _ in range(k)] for _ in range(n)]
-            
-            # Convert h_init to numpy array for better manipulation
-            h_init = np.array(h_init)
-            
-            # Print H_init
-            print_matrix(h_init.tolist(), "H_init")
-            
-            # Perform factorization
-            h_final = symnmf.factorize(w, h_init.tolist(), n, k)
-            if h_final is None:
-                print("An Error Has Occurred")
-                sys.exit(1)
-                        
-            # Verify h_final is different from h_init
-            if np.array_equal(np.array(h_final), h_init):
-                print("Warning: H matrix did not change during optimization")
-            
-            # Print H_final
-            print_matrix(h_final, "H_final")
-            
-        else:
-            # Handle other cases (sym, ddg, norm)...
-            result = None
-            if goal == 'sym':
-                result = symnmf.sym(points, n, d)
-            elif goal == 'ddg':
-                sim = symnmf.sym(points, n, d)
-                result = symnmf.ddg(sim, n)
-            elif goal == 'norm':
-                sim = symnmf.sym(points, n, d)
-                ddg = symnmf.ddg(sim, n)
-                result = symnmf.norm(sim, ddg, n)
-            
-            if result is None:
-                print("An Error Has Occurred")
-                sys.exit(1)
+            calculate_symnmf(points, n, d, k)
+        elif goal == 'sym':
+            result = symnmf.sym(points, n, d)
             print_matrix(result)
+        elif goal == 'ddg':
+            sim = symnmf.sym(points, n, d)
+            result = symnmf.ddg(sim, n)
+            print_matrix(result)
+        elif goal == 'norm':
+            sim = symnmf.sym(points, n, d)
+            ddg = symnmf.ddg(sim, n)
+            result = symnmf.norm(sim, ddg, n)
+            print_matrix(result)
+        else:
+            raise RuntimeError()
             
-    except Exception as e:
+    except:
         print("An Error Has Occurred")
         sys.exit(1)
 
